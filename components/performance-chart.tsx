@@ -54,7 +54,7 @@ export function PerformanceChart({ data }: PerformanceChartProps) {
           <YAxis
             yAxisId="left"
             tick={{ fontSize: 12 }}
-            tickFormatter={(v: number) => `$${v}`}
+            tickFormatter={(v: number) => formatCurrency(v)}
           />
           <YAxis
             yAxisId="right"

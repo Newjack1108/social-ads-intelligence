@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { formatCurrency } from "./utils";
 import { Decimal } from "@prisma/client/runtime/library";
 
 export interface DateRange {
@@ -368,7 +369,7 @@ export async function getRecommendations(
         description:
           "This entity has significant spend with zero conversions. Review targeting and creative.",
         entityName: entity.name ?? entity.externalId,
-        metric: `Spend: $${totalSpend.toFixed(2)}`,
+        metric: `Spend: ${formatCurrency(totalSpend)}`,
       });
     }
   }
