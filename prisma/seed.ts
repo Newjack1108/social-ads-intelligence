@@ -5,6 +5,9 @@ const prisma = new PrismaClient();
 const SEED_API_KEY = "wk_seed_test_local_dev_12345";
 
 async function main() {
+  console.log("Seeding database...");
+  console.log("DATABASE_URL set:", !!process.env.DATABASE_URL);
+
   let workspace = await prisma.workspace.findUnique({
     where: { apiKey: SEED_API_KEY },
   });
