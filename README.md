@@ -195,6 +195,8 @@ Headers: `x-workspace-key`, `x-make-signature`, `Content-Type: application/json`
 
 ## Make.com Webhook Setup
 
+**Full step-by-step guide:** See [docs/MAKE_COM_SETUP.md](docs/MAKE_COM_SETUP.md) for creating a Make.com scenario that fetches Meta Ads and posts to this webhook.
+
 ### Endpoint
 
 ```
@@ -207,8 +209,14 @@ POST https://your-app.up.railway.app/api/webhooks/meta
 | Header           | Description                                                                 |
 | ---------------- | --------------------------------------------------------------------------- |
 | `x-workspace-key` | Workspace API key (from `Workspace.apiKey` in the database)                 |
-| `x-make-signature` | HMAC SHA256 of the **raw JSON body** using `WEBHOOK_SECRET` as the key      |
 | `Content-Type`   | `application/json`                                                          |
+
+### Authentication (choose one)
+
+| Header | Description |
+| ------ | ----------- |
+| `x-make-signature` | HMAC SHA256 of the **raw JSON body** using `WEBHOOK_SECRET` as the key (recommended for production) |
+| `x-webhook-secret` | Plain `WEBHOOK_SECRET` value – simpler, no Code module needed in Make.com |
 
 ### Signature Verification
 
@@ -346,6 +354,8 @@ Transform the Meta API response into the payload format above before sending to 
 ## License
 
 MIT
-#   s o c i a l - a d s - i n t e l l i g e n c e  
- #   s o c i a l - a d s - i n t e l l i g e n c e  
+#   s o c i a l - a d s - i n t e l l i g e n c e 
+ 
+ #   s o c i a l - a d s - i n t e l l i g e n c e 
+ 
  

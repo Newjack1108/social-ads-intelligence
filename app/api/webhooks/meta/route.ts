@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.text();
     const workspaceKey = request.headers.get("x-workspace-key");
     const signature = request.headers.get("x-make-signature");
+    const secretHeader = request.headers.get("x-webhook-secret");
     const webhookSecret = process.env.WEBHOOK_SECRET ?? "";
 
     const workspace = await validateWorkspaceApiKey(workspaceKey);
@@ -48,14 +49,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const signatureValid = verifySignature(rawBody, signature, webhookSecret);
-    if (!signatureValid) {
-      logger.warn("Webhook rejected: invalid x-make-signature", {
+    const authValid =
+      (signature && verifySignature(rawBody, signature, webhookSecret)) ||
+      (secretHeader &&
+        webhookSecret &&
+        secretHeader.length === webhookSecret.length &&
+        timingSafeEqual(
+          Buffer.from(secretHeader, "utf8"),
+          Buffer.from(webhookSecret, "utf8")
+        ));
+
+    if (!authValid) {
+      logger.warn("Webhook rejected: invalid or missing authentication", {
         requestId,
         workspaceId: workspace.workspaceId,
       });
       return NextResponse.json(
-        { error: "Invalid or missing x-make-signature" },
+        {
+          error:
+            "Invalid or missing x-make-signature or x-webhook-secret. Provide HMAC signature or matching x-webhook-secret header.",
+        },
         { status: 401 }
       );
     }
