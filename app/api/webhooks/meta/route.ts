@@ -98,7 +98,13 @@ export async function POST(request: NextRequest) {
         },
       });
       return NextResponse.json(
-        { error: "Invalid JSON payload" },
+        {
+          error: "Invalid JSON payload",
+          debug: {
+            bodyLength: rawBody.length,
+            bodyPreview: bodyPreview.slice(0, 500),
+          },
+        },
         { status: 400 }
       );
     }

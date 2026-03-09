@@ -295,11 +295,13 @@ Reference them in modules with `{{WEBHOOK_SECRET}}`, etc.
 
 ### 400 Invalid JSON payload – how to debug
 
-When JSON parse fails, the webhook stores the raw body (first 2000 chars) in the database:
+The webhook returns a `debug` object in the 400 response with the body it received:
 
-1. Connect to your Railway PostgreSQL (or use a DB client)
-2. Query: `SELECT "rawPayload" FROM "MetaRawEvent" WHERE "processingError" = 'JSON parse failed' ORDER BY "createdAt" DESC LIMIT 1;`
-3. The `rawPayload.bodyPreview` field shows exactly what Make.com sent – look for unescaped quotes, `undefined`, trailing commas, or malformed structure
+1. In Make.com → **Operations** → open the failed run → click the HTTP module
+2. View the **Response** or error details – the body includes `debug.bodyPreview` (first 500 chars of what was sent)
+3. Look for: unescaped quotes, `undefined`, trailing commas, missing commas, or malformed structure
+
+You can also query the database: `SELECT "rawPayload" FROM "MetaRawEvent" WHERE "processingError" = 'JSON parse failed' ORDER BY "createdAt" DESC LIMIT 1;` (stores first 2000 chars in `bodyPreview`)
 
 **Common causes:**
 - **Empty numeric fields** – `{{1.spend}}` when empty can output nothing → `"spend": ` (invalid). Use `ifempty(1.spend; 0)` for all numbers
