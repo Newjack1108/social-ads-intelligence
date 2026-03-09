@@ -77,16 +77,23 @@ export async function POST(request: NextRequest) {
     try {
       payload = JSON.parse(rawBody);
     } catch (e) {
+      const bodyPreview = rawBody.slice(0, 2000);
       logger.error("Webhook payload JSON parse failed", {
         requestId,
         workspaceId: workspace.workspaceId,
         error: e instanceof Error ? e.message : String(e),
+        bodyLength: rawBody.length,
+        bodyPreview,
       });
       await prisma.metaRawEvent.create({
         data: {
           workspaceId: workspace.workspaceId,
           signatureValid: true,
-          rawPayload: { parseError: "Invalid JSON" },
+          rawPayload: {
+            parseError: "Invalid JSON",
+            bodyLength: rawBody.length,
+            bodyPreview,
+          },
           processingError: "JSON parse failed",
         },
       });

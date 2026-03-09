@@ -5,12 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "prisma db push && (npm run db:seed || true) && next start",
+    "start": "prisma db push && next start",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "db:clear-seed": "tsx prisma/clear-seed.ts",
     "db:studio": "prisma studio"
   },
   "dependencies": {

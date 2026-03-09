@@ -193,7 +193,42 @@ If Make.com doesn’t expose HMAC in the UI, the Code module or a separate “si
      - **Option A (simple):** `x-webhook-secret`: `{{WEBHOOK_SECRET}}` (no Code module needed)
      - **Option B (HMAC):** `x-make-signature`: output from Code module
 5. **Body type**: Raw
-6. **Body**: the JSON payload (from Set Variables or Code module)
+6. **Body**: the JSON payload (from Set Variables, Code module, or raw template below)
+
+#### Raw JSON body (no Code, no aggregator)
+
+If you use **Iterator** → **HTTP** (one request per insight), paste this in the HTTP body. Use `ifempty()` so empty values never produce invalid JSON:
+
+```json
+{
+  "source": "meta",
+  "account_id": "{{ifempty(1.account_id; \"unknown\")}}",
+  "generated_at": "{{formatDate(now; \"YYYY-MM-DDTHH:mm:ss.SSS\")}}Z",
+  "grain": "daily",
+  "rows": [
+    {
+      "campaign_id": "{{ifempty(1.campaign_id; "")}}",
+      "campaign_name": "{{ifempty(1.campaign_name; "")}}",
+      "adset_id": "{{ifempty(1.adset_id; "")}}",
+      "adset_name": "{{ifempty(1.adset_name; "")}}",
+      "ad_id": "{{ifempty(1.ad_id; "")}}",
+      "ad_name": "{{ifempty(1.ad_name; "")}}",
+      "date_start": "{{ifempty(1.date_start; \"2024-01-01\")}}",
+      "date_stop": "{{ifempty(1.date_stop; ifempty(1.date_start; \"2024-01-01\"))}}",
+      "spend": {{ifempty(1.spend; 0)}},
+      "impressions": {{ifempty(1.impressions; 0)}},
+      "reach": {{ifempty(1.reach; 0)}},
+      "frequency": {{ifempty(1.frequency; 0)}},
+      "clicks": {{ifempty(1.clicks; 0)}},
+      "ctr": {{ifempty(1.ctr; 0)}},
+      "cpc": {{ifempty(1.cpc; 0)}},
+      "cpm": {{ifempty(1.cpm; 0)}}
+    }
+  ]
+}
+```
+
+**Note:** Do not include `actions` or `action_values` in the raw template – they are complex arrays that often break JSON. Use the Code module (Step 6) if you need them.
 
 ---
 
@@ -253,9 +288,24 @@ Reference them in modules with `{{WEBHOOK_SECRET}}`, etc.
 | Error | Cause |
 |-------|-------|
 | 401 Unauthorized | Invalid `x-workspace-key` or `x-make-signature` |
+| 400 Invalid JSON payload | Malformed JSON – see below |
 | 400 Validation failed | Check `source`, `account_id`, `rows`, and field types |
 | Empty rows | Meta date range or level may not return data |
 | Signature mismatch | Body used for hashing must be identical to HTTP body; no extra whitespace or key reordering |
+
+### 400 Invalid JSON payload – how to debug
+
+When JSON parse fails, the webhook stores the raw body (first 2000 chars) in the database:
+
+1. Connect to your Railway PostgreSQL (or use a DB client)
+2. Query: `SELECT "rawPayload" FROM "MetaRawEvent" WHERE "processingError" = 'JSON parse failed' ORDER BY "createdAt" DESC LIMIT 1;`
+3. The `rawPayload.bodyPreview` field shows exactly what Make.com sent – look for unescaped quotes, `undefined`, trailing commas, or malformed structure
+
+**Common causes:**
+- **Empty numeric fields** – `{{1.spend}}` when empty can output nothing → `"spend": ` (invalid). Use `ifempty(1.spend; 0)` for all numbers
+- **`formatDate` syntax** – Use `{{formatDate(now; \"YYYY-MM-DDTHH:mm:ss.SSS\")}}` with escaped inner quotes
+- **`actions` / `action_values`** – These are arrays of objects. Don’t embed them directly in the JSON template; omit them or use a Code module
+- **Wrong body type** – HTTP module must use **Body type: Raw** and **Content-Type: application/json**
 
 ---
 
