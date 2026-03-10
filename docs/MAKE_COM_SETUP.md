@@ -194,6 +194,7 @@ If Make.com doesn’t expose HMAC in the UI, the Code module or a separate “si
      - **Option B (HMAC):** `x-make-signature`: output from Code module
 5. **Body type**: Raw
 6. **Body**: the JSON payload (from Set Variables, Code module, or raw template below)
+7. **Request compressed content**: Turn **off** (set to `false`). Compressing the body sends gzip binary; the webhook expects plain JSON and will fail with "Invalid JSON payload".
 
 #### Raw JSON body (no Code, no aggregator)
 
@@ -304,6 +305,7 @@ The webhook returns a `debug` object in the 400 response with the body it receiv
 You can also query the database: `SELECT "rawPayload" FROM "MetaRawEvent" WHERE "processingError" = 'JSON parse failed' ORDER BY "createdAt" DESC LIMIT 1;` (stores first 2000 chars in `bodyPreview`)
 
 **Common causes:**
+- **Request compressed content: true** – Turn this **off**. Compression sends gzip binary; the webhook expects plain JSON.
 - **Empty numeric fields** – `{{1.spend}}` when empty can output nothing → `"spend": ` (invalid). Use `ifempty(1.spend; 0)` for all numbers
 - **`formatDate` syntax** – Use `{{formatDate(now; \"YYYY-MM-DDTHH:mm:ss.SSS\")}}` with escaped inner quotes
 - **`actions` / `action_values`** – These are arrays of objects. Don’t embed them directly in the JSON template; omit them or use a Code module
@@ -321,3 +323,12 @@ If you want a minimal setup:
 4. **HTTP** → POST to webhook with headers
 
 This omits creatives; you can add a separate Facebook Creative fetch and append to `creatives` later.
+
+---
+
+## Actual Sale Tracking (LeadLock + Manual)
+
+Meta reports leads and some conversions, but not offline sales (e.g. when a lead books later). To track actual sale value:
+
+- **LeadLock webhook** – Send sale events from LeadLock when a Meta lead converts. See [LEADLOCK_SETUP.md](LEADLOCK_SETUP.md).
+- **Manual entry** – Use **Record sale** in the app to attribute sales to campaigns, ad sets, or ads.

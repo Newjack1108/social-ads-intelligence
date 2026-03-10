@@ -18,10 +18,9 @@ async function main() {
     where: { adEntity: { workspaceId: workspace.id } },
   });
   await prisma.metaEntity.deleteMany({ where: { workspaceId: workspace.id } });
+  await prisma.workspace.delete({ where: { id: workspace.id } });
 
-  console.log(
-    "Test data removed. Workspace kept so you can still use the app and receive webhooks."
-  );
+  console.log("Sample data and seed workspace removed. Database is now fresh.");
 }
 
 main()

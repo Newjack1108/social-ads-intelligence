@@ -19,6 +19,7 @@ export default async function AppLayout({
     { href: "/adsets", label: "Ad Sets" },
     { href: "/ads", label: "Ads" },
     { href: "/creatives", label: "Creatives" },
+    { href: "/sales", label: "Record sale" },
     { href: "/recommendations", label: "Recommendations" },
   ];
 

@@ -1,6 +1,5 @@
 import { prisma } from "./db";
 import { formatCurrency } from "./utils";
-import { Decimal } from "@prisma/client/runtime/library";
 
 export interface DateRange {
   start: Date;
@@ -30,6 +29,40 @@ export function parseDateRange(searchParams: {
   if (isNaN(start.getTime())) return defaultRange;
   if (isNaN(end.getTime())) return defaultRange;
   return { start, end };
+}
+
+async function getEntityIdsForRollup(
+  workspaceId: string,
+  entityId: string
+): Promise<string[]> {
+  const entities = await prisma.metaEntity.findMany({
+    where: { workspaceId },
+    select: { id: true, parentId: true },
+  });
+  const idSet = new Set<string>([entityId]);
+  let frontier = [entityId];
+  while (frontier.length > 0) {
+    const next: string[] = [];
+    for (const pid of frontier) {
+      for (const e of entities) {
+        if (e.parentId === pid) {
+          idSet.add(e.id);
+          next.push(e.id);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return Array.from(idSet);
+}
+
+async function getOfflineSalesInRange(workspaceId: string, range: DateRange) {
+  return prisma.offlineSale.findMany({
+    where: {
+      workspaceId,
+      date: { gte: range.start, lte: range.end },
+    },
+  });
 }
 
 export async function getAggregatedMetrics(
@@ -67,6 +100,12 @@ export async function getAggregatedMetrics(
         totals.conversionValue += Number(a.actionValue);
       }
     }
+  }
+
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  for (const s of offlineSales) {
+    totals.conversions += 1;
+    totals.conversionValue += Number(s.amount);
   }
 
   const frequency = totals.reach > 0 ? totals.impressions / totals.reach : 0;
@@ -148,6 +187,27 @@ export async function getTimeSeriesData(
     }
   }
 
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  for (const s of offlineSales) {
+    const d = s.date.toISOString().slice(0, 10);
+    if (!byDate.has(d)) {
+      byDate.set(d, {
+        date: d,
+        spend: 0,
+        impressions: 0,
+        clicks: 0,
+        ctr: 0,
+        conversions: 0,
+        conversionValue: 0,
+        cpa: 0,
+        roas: 0,
+      });
+    }
+    const row = byDate.get(d)!;
+    row.conversions += 1;
+    row.conversionValue += Number(s.amount);
+  }
+
   for (const row of Array.from(byDate.values())) {
     row.ctr = row.impressions > 0 ? (row.clicks / row.impressions) * 100 : 0;
     row.cpa = row.conversions > 0 ? row.spend / row.conversions : 0;
@@ -156,6 +216,132 @@ export async function getTimeSeriesData(
 
   return Array.from(byDate.values()).sort(
     (a, b) => a.date.localeCompare(b.date)
+  );
+}
+
+export async function getCampaignsWithMetrics(
+  workspaceId: string,
+  range: DateRange
+) {
+  const campaigns = await prisma.metaEntity.findMany({
+    where: { workspaceId, entityType: "campaign" },
+    include: {
+      insights: {
+        where: { date: { gte: range.start, lte: range.end } },
+        include: { actions: true },
+      },
+    },
+  });
+
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  const salesByEntity = new Map<string, { count: number; value: number }>();
+  for (const s of offlineSales) {
+    const cur = salesByEntity.get(s.entityId) ?? { count: 0, value: 0 };
+    cur.count += 1;
+    cur.value += Number(s.amount);
+    salesByEntity.set(s.entityId, cur);
+  }
+
+  return Promise.all(
+    campaigns.map(async (c) => {
+      const insights = c.insights;
+      const spend = insights.reduce((s, i) => s + Number(i.spend), 0);
+      const impressions = insights.reduce((s, i) => s + i.impressions, 0);
+      const clicks = insights.reduce((s, i) => s + i.clicks, 0);
+      let conversions = 0;
+      const convTypes = ["purchase", "lead", "omni_purchase"];
+      for (const i of insights) {
+        for (const a of i.actions) {
+          if (convTypes.some((t) => a.actionType.toLowerCase().includes(t))) {
+            conversions += a.value;
+          }
+        }
+      }
+      const rollupIds = await getEntityIdsForRollup(workspaceId, c.id);
+      for (const eid of rollupIds) {
+        const s = salesByEntity.get(eid) ?? { count: 0, value: 0 };
+        conversions += s.count;
+      }
+      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+      const cpc = clicks > 0 ? spend / clicks : 0;
+      const cpa = conversions > 0 ? spend / conversions : 0;
+      return {
+        id: c.id,
+        name: c.name ?? c.externalId,
+        status: c.status,
+        spend,
+        impressions,
+        clicks,
+        ctr,
+        cpc,
+        conversions,
+        cpa,
+      };
+    })
+  );
+}
+
+export async function getAdsetsWithMetrics(
+  workspaceId: string,
+  range: DateRange
+) {
+  const adsets = await prisma.metaEntity.findMany({
+    where: { workspaceId, entityType: "adset" },
+    include: {
+      insights: {
+        where: { date: { gte: range.start, lte: range.end } },
+        include: { actions: true },
+      },
+      parent: true,
+    },
+  });
+
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  const salesByEntity = new Map<string, { count: number; value: number }>();
+  for (const s of offlineSales) {
+    const cur = salesByEntity.get(s.entityId) ?? { count: 0, value: 0 };
+    cur.count += 1;
+    cur.value += Number(s.amount);
+    salesByEntity.set(s.entityId, cur);
+  }
+
+  return Promise.all(
+    adsets.map(async (a) => {
+      const insights = a.insights;
+      const spend = insights.reduce((s, i) => s + Number(i.spend), 0);
+      const impressions = insights.reduce((s, i) => s + i.impressions, 0);
+      const clicks = insights.reduce((s, i) => s + i.clicks, 0);
+      let conversions = 0;
+      const convTypes = ["purchase", "lead", "omni_purchase"];
+      for (const i of insights) {
+        for (const act of i.actions) {
+          if (convTypes.some((t) => act.actionType.toLowerCase().includes(t))) {
+            conversions += act.value;
+          }
+        }
+      }
+      const rollupIds = await getEntityIdsForRollup(workspaceId, a.id);
+      for (const eid of rollupIds) {
+        const s = salesByEntity.get(eid) ?? { count: 0, value: 0 };
+        conversions += s.count;
+      }
+      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+      const cpc = clicks > 0 ? spend / clicks : 0;
+      const cpa = conversions > 0 ? spend / conversions : 0;
+      return {
+        id: a.id,
+        name: a.name ?? a.externalId,
+        campaign: a.parent?.name ?? a.parent?.externalId ?? "—",
+        status: a.status,
+        spend,
+        impressions,
+        clicks,
+        ctr,
+        cpc,
+        conversions,
+        cpa,
+      };
+    })
   );
 }
 
@@ -177,6 +363,15 @@ export async function getAdsWithMetrics(
     },
   });
 
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  const salesByEntity = new Map<string, { count: number; value: number }>();
+  for (const s of offlineSales) {
+    const cur = salesByEntity.get(s.entityId) ?? { count: 0, value: 0 };
+    cur.count += 1;
+    cur.value += Number(s.amount);
+    salesByEntity.set(s.entityId, cur);
+  }
+
   return entities.map((e) => {
     const insights = e.insights;
     const spend = insights.reduce((s, i) => s + Number(i.spend), 0);
@@ -191,6 +386,9 @@ export async function getAdsWithMetrics(
         }
       }
     }
+    const adSales = salesByEntity.get(e.id) ?? { count: 0, value: 0 };
+    conversions += adSales.count;
+    const conversionValue = adSales.value;
     const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
     const cpc = clicks > 0 ? spend / clicks : 0;
     const cpa = conversions > 0 ? spend / conversions : 0;
@@ -207,6 +405,7 @@ export async function getAdsWithMetrics(
       conversions,
       cpa,
       creative: e.creatives[0],
+      conversionValue,
     };
   });
 }
@@ -231,6 +430,15 @@ export async function getCreativesWithPerformance(
     },
   });
 
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  const salesByEntity = new Map<string, { count: number; value: number }>();
+  for (const s of offlineSales) {
+    const cur = salesByEntity.get(s.entityId) ?? { count: 0, value: 0 };
+    cur.count += 1;
+    cur.value += Number(s.amount);
+    salesByEntity.set(s.entityId, cur);
+  }
+
   return creatives.map((c) => {
     const insights = c.adEntity.insights;
     const spend = insights.reduce((s, i) => s + Number(i.spend), 0);
@@ -248,6 +456,8 @@ export async function getCreativesWithPerformance(
         }
       }
     }
+    const adSales = salesByEntity.get(c.adEntityId) ?? { count: 0, value: 0 };
+    conversions += adSales.count;
     const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
     const cpa = conversions > 0 ? spend / conversions : 0;
     const videoP95 = insights.reduce((s, i) => s + i.videoP95Watched, 0);
@@ -292,6 +502,12 @@ export async function getRecommendations(
     entityName?: string;
     metric?: string;
   }[] = [];
+
+  const offlineSales = await getOfflineSalesInRange(workspaceId, range);
+  const salesByEntity = new Map<string, number>();
+  for (const s of offlineSales) {
+    salesByEntity.set(s.entityId, (salesByEntity.get(s.entityId) ?? 0) + 1);
+  }
 
   const byEntity = new Map<
     string,
@@ -361,6 +577,12 @@ export async function getRecommendations(
         }
       }
     }
+    const rollupIds = await getEntityIdsForRollup(workspaceId, entity.id);
+    const entityOfflineCount = rollupIds.reduce(
+      (sum, id) => sum + (salesByEntity.get(id) ?? 0),
+      0
+    );
+    totalConversions += entityOfflineCount;
     if (totalSpend > 100 && totalConversions === 0) {
       recommendations.push({
         type: "overspend",
@@ -387,6 +609,8 @@ export async function getRecommendations(
       }
     }
   }
+  const totalOfflineCount = offlineSales.length;
+  allConversions += totalOfflineCount;
   if (allClicks > 500 && allConversions < allClicks * 0.01) {
     recommendations.push({
       type: "landing_page",

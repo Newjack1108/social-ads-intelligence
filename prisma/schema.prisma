@@ -72,6 +72,7 @@ model Workspace {
   dataSources  DataSource[]
   metaRawEvents MetaRawEvent[]
   metaEntities MetaEntity[]
+  offlineSales OfflineSale[]
 }
 
 model WorkspaceMember {
@@ -143,6 +144,7 @@ model MetaEntity {
   children  MetaEntity[] @relation("EntityHierarchy")
   insights  MetaInsightDaily[]
   creatives MetaCreative[] @relation("AdCreatives")
+  offlineSales OfflineSale[]
 
   @@unique([workspaceId, entityType, externalId])
   @@index([workspaceId, accountId])
@@ -241,4 +243,25 @@ model MetaCreative {
 
   @@unique([adEntityId])
   @@index([adEntityId])
+}
+
+// ============ OFFLINE SALES (LeadLock + manual actual sales) ============
+
+model OfflineSale {
+  id          String    @id @default(cuid())
+  workspaceId String
+  entityId    String
+  date        DateTime  @db.Date
+  amount      Decimal   @db.Decimal(12, 4)
+  source      String    // "leadlock" | "manual"
+  leadlockId  String?   // LeadLock event/lead id (for dedup)
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  entity    MetaEntity @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, leadlockId])
+  @@index([workspaceId, date])
+  @@index([entityId])
 }

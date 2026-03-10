@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
           error: "Invalid JSON payload",
           debug: {
             bodyLength: rawBody.length,
-            bodyPreview: bodyPreview.slice(0, 500),
+            bodyPreview: bodyPreview.slice(0, 2500),
           },
         },
         { status: 400 }

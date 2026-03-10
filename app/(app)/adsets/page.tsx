@@ -9,9 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { parseDateRange } from "@/lib/dashboard";
+import { parseDateRange, getAdsetsWithMetrics } from "@/lib/dashboard";
 import { getCurrentUser, getWorkspacesForUser } from "@/lib/auth";
-import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { formatCurrency, formatNumber, formatPercent } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,51 +38,7 @@ async function AdSetsContent({
   const params = await searchParams;
   const range = parseDateRange(params);
 
-  const adsets = await prisma.metaEntity.findMany({
-    where: { workspaceId, entityType: "adset" },
-    include: {
-      insights: {
-        where: { date: { gte: range.start, lte: range.end } },
-        include: { actions: true },
-      },
-      parent: true,
-    },
-  });
-
-  const rows = adsets.map((a) => {
-    const insights = a.insights;
-    const spend = insights.reduce((s, i) => s + Number(i.spend), 0);
-    const impressions = insights.reduce((s, i) => s + i.impressions, 0);
-    const clicks = insights.reduce((s, i) => s + i.clicks, 0);
-    let conversions = 0;
-    for (const i of insights) {
-      for (const act of i.actions) {
-        if (
-          ["purchase", "lead", "omni_purchase"].some((t) =>
-            act.actionType.toLowerCase().includes(t)
-          )
-        ) {
-          conversions += act.value;
-        }
-      }
-    }
-    const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-    const cpc = clicks > 0 ? spend / clicks : 0;
-    const cpa = conversions > 0 ? spend / conversions : 0;
-    return {
-      id: a.id,
-      name: a.name ?? a.externalId,
-      campaign: a.parent?.name ?? a.parent?.externalId ?? "—",
-      status: a.status,
-      spend,
-      impressions,
-      clicks,
-      ctr,
-      cpc,
-      conversions,
-      cpa,
-    };
-  });
+  const rows = await getAdsetsWithMetrics(workspaceId, range);
 
   return (
     <div className="space-y-6">
